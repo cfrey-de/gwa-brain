@@ -1,0 +1,13 @@
+Commissioning Report — Tank T-7
+
+The inflow is 12 litres per second.
+
+The outflow is 4 litres per second.
+
+The net inflow is the inflow minus the outflow, and equals 8 litres per second.
+
+The tank volume is 9600 litres.
+
+The fill time is the tank volume divided by the net inflow, and equals 1200 seconds.
+
+The fill time in minutes is the fill time in seconds divided by 60, and equals 20 minutes.

@@ -1,0 +1,39 @@
+services:
+  brain:
+    build: .
+    # Run as the host user so files written into ./data are host-owned & cleanable.
+    # Defaults to uid/gid 1000 (the usual single-user box); override BRAIN_UID/BRAIN_GID
+    # for other hosts. (UID is a read-only shell var, hence the BRAIN_ prefix.)
+    user: "${BRAIN_UID:-1000}:${BRAIN_GID:-1000}"
+    ports:
+      # Published to host loopback only (single-user PoC, no auth). To expose on the
+      # LAN set BRAIN_BIND=0.0.0.0. Host port configurable via BRAIN_PORT.
+      - "${BRAIN_BIND:-127.0.0.1}:${BRAIN_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data          # brain.json + uploads persist on the host
+    env_file:
+      - .env
+    environment:
+      # in-compose overrides so the app always finds Qdrant regardless of .env
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - BRAIN_DATA_DIR=/app/data
+    depends_on:
+      - qdrant
+    # The app waits for Qdrant readiness itself (gwa.deps.wait_for_qdrant), so we do
+    # NOT use a compose healthcheck: the qdrant image is not guaranteed to ship
+    # curl/wget/bash, which would make a CMD healthcheck hang or fail.
+    restart: unless-stopped
+
+  qdrant:
+    # >= 1.10 for the Query API (/points/query) used by qdrant-client 1.18.
+    # v1.9.0 (the original pin) lacks it and returns 404 on search.
+    image: qdrant/qdrant:v1.12.0
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage   # embeddings persist across restarts
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:

@@ -1,0 +1,5 @@
+Invoice 2026-0042 — Summary
+
+The net amount for the listed items is EUR 400. Value-added tax is charged at 19 percent,
+which on this net figure works out to EUR 76. Adding that tax onto the net gives an invoice
+total of EUR 476.

@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#2A9D8F">
+  <title>🧠 GWA Brain</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- ============================ header ============================ -->
+  <header class="app-header">
+    <div class="brand">🧠 GWA Brain</div>
+
+    <button id="upload-btn" class="icon-btn" title="Upload document">
+      <span class="spinner"></span>
+      <span class="ic">📤</span><span class="label">Upload</span>
+    </button>
+    <input id="file-input" type="file" accept=".pdf,.txt,.md,.markdown,.docx" hidden>
+
+    <label class="mode-field" title="Extraction mode">
+      <span class="mode-cap">Mode:</span>
+      <select id="mode-select">
+        <option value="auto" selected>Auto</option>
+        <option value="factual">Factual</option>
+        <option value="prose">Prose</option>
+        <option value="derivation">Derivation</option>
+      </select>
+    </label>
+
+    <div class="header-spacer"></div>
+
+    <div id="status-pill" class="status-pill" title="Current knowledge state">
+      <span>0 facts · 0 documents</span>
+    </div>
+
+    <a id="repo-link" class="icon-btn" href="https://github.com/cfrey-de/gwa-brain"
+       target="_blank" rel="noopener noreferrer" title="Source code on GitHub">
+      <span class="ic">&lt;/&gt;</span><span class="label">GitHub</span>
+    </a>
+
+    <div class="menu-wrap">
+      <button id="menu-btn" class="icon-btn menu-btn" title="Documents" aria-label="Menu">☰</button>
+      <div id="menu-panel" class="menu-panel hidden">
+        <div class="menu-title">Documents</div>
+        <div id="doc-list"></div>
+        <div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">
+          <button id="reset-btn" class="icon-btn danger" style="width:100%">
+            <span class="ic">🗑</span><span class="label">Reset brain</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================ tabs (mobile only) ============================ -->
+  <nav class="tabbar" id="tabbar">
+    <button class="tab active" data-tab="antwort">Answer</button>
+    <button class="tab" data-tab="baum">Tree</button>
+    <button class="tab" data-tab="log">Log</button>
+  </nav>
+
+  <!-- ============================ workspace ============================ -->
+  <main id="workspace">
+    <div class="col-left">
+      <section id="pane-answer" class="pane active" data-pane="antwort">
+        <div class="pane-head"><span>Answer</span></div>
+        <div class="body" id="answer-body">
+          <div class="empty-hint">Ask a question to get a substantiated answer. Every sentence carries its source <span class="cite">[Doc, p. X]</span>.</div>
+          <div class="empty-hint" style="opacity:.55;margin-top:10px;font-size:.85em">Want your own model? <b>Duplicate this Space</b> (top-right ⋮) and add your key — it runs on your account.</div>
+        </div>
+      </section>
+
+      <section id="pane-log" class="pane" data-pane="log">
+        <div class="pane-head"><span>Live log</span></div>
+        <div class="log-body" id="log-body">
+          <div class="empty-hint">No events yet. Upload a document or ask a question.</div>
+        </div>
+        <button id="scroll-badge" class="scroll-badge hidden">⬇ New events</button>
+      </section>
+    </div>
+
+    <div class="col-right">
+      <section id="pane-tree" class="pane" data-pane="baum">
+        <div class="pane-head">
+          <span>Knowledge tree</span>
+          <span class="grow"></span>
+          <button id="overview-btn" class="icon-btn" title="Load the full co-usage overview">Overview</button>
+          <button id="tree-reset-btn" class="icon-btn" title="Center the view">Reset view</button>
+        </div>
+        <div id="tree-host"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ============================ ask row ============================ -->
+  <footer class="ask-row">
+    <input id="question" type="text" placeholder="Ask a question … (Enter to send)" autocomplete="off">
+    <button id="ask-btn" class="btn-primary">
+      <span class="spinner"></span><span class="ask-label">Ask</span>
+    </button>
+  </footer>
+
+  <!-- drag&drop overlay (desktop) -->
+  <div id="drop-overlay" class="drop-overlay"><div class="drop-card">📥 Drop file here</div></div>
+
+  <script src="/static/tree.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    // ---------- elements ----------
+    var $ = function (id) { return document.getElementById(id); };
+    var statusPill = $("status-pill").querySelector("span");
+    var docList = $("doc-list");
+    var logBody = $("log-body");
+    var answerBody = $("answer-body");
+    var scrollBadge = $("scroll-badge");
+    var logPane = $("pane-log");
+    var questionEl = $("question");
+    var askBtn = $("ask-btn");
+    var uploadBtn = $("upload-btn");
+    var fileInput = $("file-input");
+    var modeSelect = $("mode-select");
+    var menuBtn = $("menu-btn");
+    var menuPanel = $("menu-panel");
+    var dropOverlay = $("drop-overlay");
+
+    var tree = GWATree($("tree-host"));
+
+    var state = { busy: false, logHasContent: false, autoScroll: true, readonly: false };
+
+    // ---------- helpers ----------
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    // keep [Doc, p. X] citations visible, lightly styled
+    function withCites(s) {
+      return esc(s).replace(/\[[^\]\[]+\]/g, function (m) { return '<span class="cite">' + m + "</span>"; });
+    }
+
+    // ---------- tabs (mobile); active tab persists across questions ----------
+    var TAB_KEY = "gwa.tab";
+    function setTab(tab) {
+      try { localStorage.setItem(TAB_KEY, tab); } catch (e) {}
+      document.querySelectorAll(".tab").forEach(function (b) {
+        b.classList.toggle("active", b.dataset.tab === tab);
+      });
+      document.querySelectorAll(".pane").forEach(function (p) {
+        p.classList.toggle("active", p.dataset.pane === tab);
+      });
+      if (tab === "baum") setTimeout(function () { tree.reset(); }, 0);
+    }
+    document.querySelectorAll(".tab").forEach(function (b) {
+      b.addEventListener("click", function () { setTab(b.dataset.tab); });
+    });
+    (function initTab() {
+      var saved = "antwort";
+      try { saved = localStorage.getItem(TAB_KEY) || "antwort"; } catch (e) {}
+      setTab(saved);
+    })();
+
+    // ---------- status ----------
+    // a read-only hosted demo (GWA_READONLY) serves a fixed brain: hide the controls that
+    // would mutate the single shared brain (upload, extraction mode, reset).
+    function applyReadonly() {
+      if (state.readonly) return;
+      state.readonly = true;
+      [uploadBtn, fileInput, $("reset-btn")].forEach(function (el) { if (el) el.style.display = "none"; });
+      var mf = document.querySelector(".mode-field"); if (mf) mf.style.display = "none";
+    }
+    function refreshStatus() {
+      return fetch("/brain/status").then(function (r) { return r.json(); }).then(function (s) {
+        statusPill.textContent = (s.facts || 0) + " facts · " + (s.documents || 0) + " documents";
+        renderDocs(s.docs || []);
+        if (s.readonly) applyReadonly();
+      }).catch(function () { /* offline / not ready */ });
+    }
+    function renderDocs(docs) {
+      if (!docs.length) { docList.innerHTML = '<div class="doc-empty">No documents yet.</div>'; return; }
+      docList.innerHTML = docs.map(function (d) {
+        return '<div class="doc-row"><span>' + esc(d.name) + '</span>' +
+               '<span class="n">' + (d.n_facts || 0) + ' facts</span></div>';
+      }).join("");
+    }
+
+    // ---------- menu ----------
+    menuBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      menuPanel.classList.toggle("hidden");
+    });
+    document.addEventListener("click", function (e) {
+      if (!menuPanel.contains(e.target) && e.target !== menuBtn) menuPanel.classList.add("hidden");
+    });
+
+    // ---------- busy / spinners ----------
+    function setBusy(on) {
+      state.busy = on;
+      askBtn.disabled = on;
+      questionEl.disabled = on;
+      uploadBtn.disabled = on;
+      askBtn.classList.toggle("busy", on);
+      uploadBtn.classList.toggle("busy", on);
+    }
+
+    // ---------- log rendering + autoscroll ----------
+    function clearEmptyHint() {
+      if (!state.logHasContent) { logBody.innerHTML = ""; state.logHasContent = true; }
+    }
+    function appendLog(html, cls) {
+      clearEmptyHint();
+      var d = document.createElement("div");
+      d.className = "log-item" + (cls ? " " + cls : "");
+      d.innerHTML = html;
+      logBody.appendChild(d);
+      afterLogAppend();
+    }
+    function logDivider(text) {
+      clearEmptyHint();
+      var d = document.createElement("div");
+      d.className = "log-divider";
+      d.textContent = text;
+      logBody.appendChild(d);
+      afterLogAppend();
+    }
+    function logError(msg) {
+      appendLog('<span class="ic">⛔</span><span class="txt">' + esc(msg) + "</span>", "log-error");
+    }
+    function afterLogAppend() {
+      if (state.autoScroll) scrollLogBottom();
+      else scrollBadge.classList.remove("hidden");
+    }
+    function scrollLogBottom() {
+      logPane.scrollTop = logPane.scrollHeight;
+      state.autoScroll = true;
+      scrollBadge.classList.add("hidden");
+    }
+    logPane.addEventListener("scroll", function () {
+      var dist = logPane.scrollHeight - logPane.scrollTop - logPane.clientHeight;
+      if (dist < 40) { state.autoScroll = true; scrollBadge.classList.add("hidden"); }
+      else { state.autoScroll = false; }
+    });
+    scrollBadge.addEventListener("click", scrollLogBottom);
+
+    // ---------- SSE stream parsing (fetch + ReadableStream) ----------
+    // Buffers bytes, splits on "\n\n", handles multi-event chunks AND partial lines.
+    function streamSSE(resp, onEvent) {
+      var reader = resp.body.getReader();
+      var dec = new TextDecoder();
+      var buf = "";
+      function emitRaw(raw) {
+        var lines = raw.split("\n");
+        var data = "";
+        for (var i = 0; i < lines.length; i++) {
+          var ln = lines[i];
+          if (ln.indexOf("data:") === 0) data += ln.slice(5).replace(/^ /, "");
+          else if (ln === "data") data += "";
+        }
+        if (!data) return;
+        var obj;
+        try { obj = JSON.parse(data); } catch (e) { return; }
+        onEvent(obj);
+      }
+      return reader.read().then(function step(res) {
+        if (res.done) {
+          buf += dec.decode();
+          if (buf.trim()) emitRaw(buf);
+          return;
+        }
+        buf += dec.decode(res.value, { stream: true });
+        var idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          var raw = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          if (raw.trim()) emitRaw(raw);
+        }
+        return reader.read().then(step);
+      });
+    }
+
+    // ============================ UPLOAD ============================
+    function uploadFile(file) {
+      if (!file || state.busy) return;
+      setBusy(true);
+      logDivider("📤 Upload: " + file.name);
+      var fd = new FormData();
+      fd.append("file", file);   // multipart field name `file`
+      fd.append("mode", modeSelect ? modeSelect.value : "auto");   // extraction mode
+      fetch("/upload/stream", { method: "POST", body: fd }).then(function (resp) {
+        if (!resp.ok || !resp.body) { logError("Upload failed: HTTP " + resp.status); return; }
+        return streamSSE(resp, onUploadEvent);
+      }).catch(function (e) {
+        logError("Upload error: " + (e && e.message ? e.message : e));
+      }).then(function () {
+        setBusy(false);
+        refreshStatus();
+      });
+    }
+
+    function onUploadEvent(ev) {
+      if (ev.type === "start") {
+        appendLog('<span class="ic">📄</span><span class="txt"><b>' + esc(ev.file) + "</b>" +
+          (ev.pages != null ? " · " + ev.pages + " pages" : "") + " – processing …</span>");
+      } else if (ev.type === "chunk") {
+        var head = "Page " + (ev.page != null ? ev.page : "–") + " · Chunk " + ev.chunk + "/" + ev.total_chunks;
+        var facts = ev.facts || [];
+        var body;
+        if (facts.length) {
+          body = "<ul>" + facts.map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("") + "</ul>";
+        } else {
+          body = '<div class="src">(no facts)</div>';
+        }
+        appendLog('<span class="ic">📑</span><span class="txt"><b>' + esc(head) + "</b>" + body + "</span>");
+      } else if (ev.type === "done") {
+        appendLog('<span class="ic">✅</span><span class="txt"><b>' + (ev.new_facts || 0) +
+          " new facts</b> · Brain total: " + (ev.brain_total || 0) +
+          (ev.doc ? ' <span class="src">(' + esc(ev.doc) + ")</span>" : "") + "</span>", "log-keep");
+      } else if (ev.type === "error") {
+        logError(ev.message || "Unknown error");
+      }
+    }
+
+    uploadBtn.addEventListener("click", function () { if (!state.busy) fileInput.click(); });
+    fileInput.addEventListener("change", function () {
+      if (fileInput.files && fileInput.files[0]) uploadFile(fileInput.files[0]);
+      fileInput.value = "";
+    });
+
+    // drag&drop (desktop full-window dropzone)
+    var dragDepth = 0;
+    var canDrop = function () { return window.innerWidth >= 768 && !state.busy && !state.readonly; };
+    window.addEventListener("dragenter", function (e) {
+      if (!canDrop()) return;
+      e.preventDefault(); dragDepth++; dropOverlay.classList.add("show");
+    });
+    window.addEventListener("dragover", function (e) { if (canDrop()) e.preventDefault(); });
+    window.addEventListener("dragleave", function (e) {
+      if (!canDrop()) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) dropOverlay.classList.remove("show");
+    });
+    window.addEventListener("drop", function (e) {
+      e.preventDefault(); dragDepth = 0; dropOverlay.classList.remove("show");
+      if (!canDrop()) return;
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+    });
+
+    // ============================ ASK ============================
+    function ask() {
+      var q = questionEl.value.trim();
+      if (!q || state.busy) return;
+      setBusy(true);
+      // fresh answer; keep the question in the field for easy follow-up edits
+      answerBody.innerHTML = '<div class="empty-hint">… the brain is thinking.</div>';
+      logDivider("❓ Question: " + q);
+      tree.clear();
+      fetch("/ask/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: q })
+      }).then(function (resp) {
+        if (!resp.ok || !resp.body) { logError("Request failed: HTTP " + resp.status); return; }
+        return streamSSE(resp, onAskEvent);
+      }).catch(function (e) {
+        logError("Error: " + (e && e.message ? e.message : e));
+      }).then(function () {
+        setBusy(false);
+        refreshStatus();
+        questionEl.focus();
+      });
+    }
+
+    function onAskEvent(ev) {
+      switch (ev.type) {
+        case "decompose":
+          var subs = ev.sub_requirements || [];
+          appendLog('<span class="ic">🔍</span><span class="txt"><b>Sub-requirements (' + subs.length + ")</b><ul>" +
+            subs.map(function (s) { return "<li>" + esc(s) + "</li>"; }).join("") + "</ul></span>");
+          break;
+        case "retrieve":
+          appendLog('<span class="ic">🔎</span><span class="txt"><b>' + (ev.candidates || 0) +
+            "</b> candidates retrieved</span>");
+          break;
+        case "guard_keep":
+          appendLog('<span class="ic">✓</span><span class="txt"><span class="fact">' + esc(ev.fact) +
+            '</span> <span class="src">[' + esc(ev.source) + "]</span></span>", "log-keep");
+          break;
+        case "guard_strike":
+          appendLog('<span class="ic">✗</span><span class="txt"><span class="fact">' + esc(ev.fact) +
+            '</span> <span class="src">[' + esc(ev.source) + "]</span>" +
+            '<div class="reason">Reason: ' + esc(ev.reason || "—") + "</div></span>", "log-strike");
+          break;
+        case "gap":
+          appendLog('<span class="ic">⚠</span><span class="txt">Gap: ' + esc(ev.missing) + "</span>", "log-gap");
+          break;
+        case "answer":
+          appendLog('<span class="ic">✅</span><span class="txt"><b>Answer created</b></span>', "log-keep");
+          renderAnswer(ev.result || {}, ev.text || "");
+          if (ev.result && ev.result.dependency_tree) tree.render(ev.result.dependency_tree);
+          break;
+        case "error":
+          logError(ev.message || "Unknown error");
+          answerBody.innerHTML = '<div class="gap-line">⛔ ' + esc(ev.message || "Error") + "</div>";
+          break;
+      }
+    }
+
+    function renderAnswer(result, fallbackText) {
+      var text = result.answer || fallbackText || "";
+      var html = '<div class="answer-prose">' + (text ? withCites(text) :
+        '<span class="empty-hint">No substantiated answer possible.</span>') + "</div>";
+
+      var sources = result.sources || [];
+      if (sources.length) {
+        html += '<div class="section-label">Sources</div><div class="chips">' +
+          sources.map(function (s) { return '<span class="chip">📚 ' + esc(s) + "</span>"; }).join("") + "</div>";
+      }
+      var gaps = result.gaps || [];
+      if (gaps.length) {
+        html += '<div class="section-label">Gaps</div>' +
+          gaps.map(function (g) { return '<div class="gap-line">⚠ Not substantiated: ' + esc(g) + "</div>"; }).join("");
+      }
+      answerBody.innerHTML = html;
+    }
+
+    askBtn.addEventListener("click", ask);
+    questionEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); }
+    });
+
+    // ============================ tree controls ============================
+    $("tree-reset-btn").addEventListener("click", function () { tree.reset(); });
+    $("overview-btn").addEventListener("click", function () {
+      fetch("/graph").then(function (r) { return r.json(); }).then(function (g) {
+        tree.render(g);
+        if (window.innerWidth < 768) setTab("baum");
+      }).catch(function () { logError("Overview could not be loaded."); });
+    });
+
+    // ============================ reset brain ============================
+    $("reset-btn").addEventListener("click", function () {
+      menuPanel.classList.add("hidden");
+      if (!window.confirm("Permanently delete the entire brain (all facts and documents)?")) return;
+      setBusy(true);
+      fetch("/brain/reset", { method: "POST" }).then(function (r) { return r.json(); }).then(function () {
+        logBody.innerHTML = '<div class="empty-hint">Brain reset. Upload a document to start over.</div>';
+        state.logHasContent = false;
+        answerBody.innerHTML = '<div class="empty-hint">Ask a question to get a substantiated answer.</div>';
+        tree.clear();
+      }).catch(function (e) {
+        logError("Reset failed: " + (e && e.message ? e.message : e));
+      }).then(function () {
+        setBusy(false);
+        refreshStatus();
+      });
+    });
+
+    // refit tree on viewport resize (debounced) so layout stays sensible
+    var rT;
+    window.addEventListener("resize", function () {
+      clearTimeout(rT);
+      rT = setTimeout(function () { tree.reset(); }, 150);
+    });
+
+    // ---------- boot ----------
+    refreshStatus();
+  })();
+  </script>
+</body>
+</html>

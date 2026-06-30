@@ -1,0 +1,13 @@
+Maintenance Policy
+
+Every pump station must be inspected by a certified technician at least once a year.
+
+During the inspection the technician records the water level, the operating pressure, and any unusual noise.
+
+If the operating pressure falls below the rated value, the station is taken out of service until it is repaired.
+
+Spare parts for the most common wear components are kept on site.
+
+The warranty covers manufacturing defects for two years from the date of installation.
+
+Customers are notified at least one week before a scheduled maintenance visit.

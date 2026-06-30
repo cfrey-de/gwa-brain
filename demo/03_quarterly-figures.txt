@@ -1,0 +1,13 @@
+Quarterly Figures — Q3
+
+Revenue for the quarter is 500,000 euros.
+
+Cost of goods sold is 300,000 euros.
+
+Operating expenses are 120,000 euros.
+
+Gross profit is revenue minus cost of goods sold, and equals 200,000 euros.
+
+Operating profit is gross profit minus operating expenses, and equals 80,000 euros.
+
+The profit margin is operating profit divided by revenue, and equals 16 percent.

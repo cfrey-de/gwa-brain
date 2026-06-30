@@ -1,0 +1,15 @@
+Data Sheet — Pump Station P-20
+
+The water level drops to 210 cm after 500 hours of operation.
+
+The operating pressure of the pump is 5.2 bar.
+
+The maximum flow rate is 20 litres per second.
+
+The maintenance interval is at least 3000 operating hours.
+
+The pump is tested at 25 degrees Celsius.
+
+The pump weighs 60 kilograms.
+
+The inlet is made of stainless steel pipe.

@@ -1,0 +1,19 @@
+Data Sheet — Pump Station P-12
+
+The water level drops to 160 cm after 500 hours of operation.
+
+After 100 hours the water level is still 180 cm.
+
+The operating pressure of the pump is 3.7 bar.
+
+The maximum flow rate is 12 litres per second.
+
+The inlet is made of galvanised steel pipe.
+
+The maintenance interval is at least 2000 operating hours.
+
+The pump is tested at 25 degrees Celsius.
+
+The pump weighs 45 kilograms.
+
+The housing is rated for outdoor installation.
